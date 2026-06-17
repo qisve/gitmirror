@@ -30,7 +30,9 @@ import java.util.UUID;
 )
 public class TermuxBridge extends Plugin {
 
-    private static final String OUTPUT_DIR = "/data/data/com.termux/files/home/.gitmirror";
+    // Use shared storage that both apps can access
+    private static final String SHARED_DIR =
+        Environment.getExternalStorageDirectory().getAbsolutePath() + "/GitMirror";
 
     @PluginMethod
     public void checkTermux(PluginCall call) {
@@ -47,30 +49,35 @@ public class TermuxBridge extends Plugin {
     @PluginMethod
     public void requestStorage(PluginCall call) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+: need MANAGE_EXTERNAL_STORAGE
             if (Environment.isExternalStorageManager()) {
+                ensureDirs();
                 JSObject r = new JSObject();
                 r.put("granted", true);
                 call.resolve(r);
             } else {
-                // Store call for later
                 saveCall(call);
                 Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
                 intent.setData(Uri.parse("package:" + getContext().getPackageName()));
                 getActivity().startActivityForResult(intent, 9001);
             }
         } else {
-            // Android 10 and below
             requestPermissionForAlias("storage", call, "storageCallback");
         }
     }
 
     @PermissionCallback
     private void storageCallback(PluginCall call) {
-        JSObject r = new JSObject();
         boolean granted = getPermissionState("storage") == com.getcapacitor.PermissionState.GRANTED;
+        if (granted) ensureDirs();
+        JSObject r = new JSObject();
         r.put("granted", granted);
         call.resolve(r);
+    }
+
+    private void ensureDirs() {
+        new File(SHARED_DIR + "/out").mkdirs();
+        // Make sure .nomedia doesn't block access
+        try { new File(SHARED_DIR + "/out/.nomedia").createNewFile(); } catch (Exception ignored) {}
     }
 
     @PluginMethod
@@ -84,14 +91,22 @@ public class TermuxBridge extends Plugin {
         }
 
         try {
-            String outputPath = OUTPUT_DIR + "/out_" + id + ".txt";
+            ensureDirs();
 
-            // Build inline command: run user command, write output, mark done
+            // Output goes to shared storage
+            String outputPath = SHARED_DIR + "/out/out_" + id + ".txt";
+            // Also create a temp path Termux can use
+            String termuxTmp = "/sdcard/GitMirror/out/out_" + id + ".txt";
+
+            new File(outputPath).delete();
+
             String safeCmd = command.replace("'", "'\\''");
+
+            // Termux command: run user command, write to shared dir, mark done
             String fullCmd =
-                "mkdir -p " + OUTPUT_DIR + " && " +
-                "{ eval '" + safeCmd + "'; } > '" + outputPath + "' 2>&1; " +
-                "echo __GM_DONE__ >> '" + outputPath + "'";
+                "mkdir -p /sdcard/GitMirror/out && " +
+                "{ eval '" + safeCmd + "'; } > '" + termuxTmp + "' 2>&1; " +
+                "echo __GM_DONE__ >> '" + termuxTmp + "'";
 
             Intent intent = new Intent();
             intent.setClassName("com.termux", "com.termux.app.RunCommandService");
@@ -134,13 +149,7 @@ public class TermuxBridge extends Plugin {
             return;
         }
 
-        // Try reading via Termux (since app can't directly access Termux home)
         try {
-            // We need to read the file through Termux since it's in Termux's private dir
-            String catCmd = "cat '" + path + "' 2>/dev/null || echo __NOT_FOUND__";
-            String tmpOut = getContext().getCacheDir() + "/gm_read.txt";
-
-            // For now, try direct read (works if storage permission is granted)
             File f = new File(path);
             if (f.exists() && f.length() > 0) {
                 StringBuilder sb = new StringBuilder();
