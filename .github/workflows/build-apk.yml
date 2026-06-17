@@ -1,0 +1,67 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npx vite build
+
+      - name: Add Capacitor Android platform
+        run: npx cap add android
+
+      - name: Copy native plugin files
+        run: |
+          cp -f android-src/TermuxBridge.java \
+            android/app/src/main/java/com/gitmirror/app/
+          cp -f android-src/MainActivity.java \
+            android/app/src/main/java/com/gitmirror/app/
+
+      - name: Patch AndroidManifest
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          sed -i '/<uses-permission.*INTERNET/a\
+          <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" \/>\n\
+          <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>\n\
+          <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" \/>' \
+            "$MANIFEST"
+          sed -i '/<application/a\    android:requestLegacyExternalStorage="true"' \
+            "$MANIFEST"
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build Debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GitMirror-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
