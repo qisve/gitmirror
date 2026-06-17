@@ -1,6 +1,7 @@
 package com.gitmirror.app;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -17,6 +18,8 @@ import com.getcapacitor.annotation.PermissionCallback;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @CapacitorPlugin(
@@ -30,9 +33,10 @@ import java.util.UUID;
 )
 public class TermuxBridge extends Plugin {
 
-    // Use shared storage that both apps can access
     private static final String SHARED_DIR =
         Environment.getExternalStorageDirectory().getAbsolutePath() + "/GitMirror";
+    private static final String TERMUX_PERM = "com.termux.permission.RUN_COMMAND";
+    private static final int PERM_REQUEST_CODE = 9002;
 
     @PluginMethod
     public void checkTermux(PluginCall call) {
@@ -48,6 +52,9 @@ public class TermuxBridge extends Plugin {
 
     @PluginMethod
     public void requestStorage(PluginCall call) {
+        // Also request Termux permission at the same time
+        requestTermuxPermission();
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
                 ensureDirs();
@@ -69,15 +76,36 @@ public class TermuxBridge extends Plugin {
     private void storageCallback(PluginCall call) {
         boolean granted = getPermissionState("storage") == com.getcapacitor.PermissionState.GRANTED;
         if (granted) ensureDirs();
+        requestTermuxPermission();
         JSObject r = new JSObject();
         r.put("granted", granted);
         call.resolve(r);
     }
 
+    private void requestTermuxPermission() {
+        try {
+            Activity activity = getActivity();
+            if (activity == null) return;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (activity.checkSelfPermission(TERMUX_PERM) != PackageManager.PERMISSION_GRANTED) {
+                    List<String> perms = new ArrayList<>();
+                    perms.add(TERMUX_PERM);
+                    // Also request storage if needed
+                    if (activity.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        != PackageManager.PERMISSION_GRANTED) {
+                        perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+                    }
+                    activity.requestPermissions(perms.toArray(new String[0]), PERM_REQUEST_CODE);
+                }
+            }
+        } catch (Exception e) {
+            // Silently fail — user can grant via settings
+        }
+    }
+
     private void ensureDirs() {
         new File(SHARED_DIR + "/out").mkdirs();
-        // Make sure .nomedia doesn't block access
-        try { new File(SHARED_DIR + "/out/.nomedia").createNewFile(); } catch (Exception ignored) {}
     }
 
     @PluginMethod
@@ -90,23 +118,27 @@ public class TermuxBridge extends Plugin {
             return;
         }
 
+        // Check Termux permission first
+        Activity activity = getActivity();
+        if (activity != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (activity.checkSelfPermission(TERMUX_PERM) != PackageManager.PERMISSION_GRANTED) {
+                requestTermuxPermission();
+                call.reject("缺少 Termux 权限，请在弹出的权限窗口中点击允许");
+                return;
+            }
+        }
+
         try {
             ensureDirs();
-
-            // Output goes to shared storage
             String outputPath = SHARED_DIR + "/out/out_" + id + ".txt";
-            // Also create a temp path Termux can use
-            String termuxTmp = "/sdcard/GitMirror/out/out_" + id + ".txt";
-
+            String termuxPath = "/sdcard/GitMirror/out/out_" + id + ".txt";
             new File(outputPath).delete();
 
             String safeCmd = command.replace("'", "'\\''");
-
-            // Termux command: run user command, write to shared dir, mark done
             String fullCmd =
                 "mkdir -p /sdcard/GitMirror/out && " +
-                "{ eval '" + safeCmd + "'; } > '" + termuxTmp + "' 2>&1; " +
-                "echo __GM_DONE__ >> '" + termuxTmp + "'";
+                "{ eval '" + safeCmd + "'; } > '" + termuxPath + "' 2>&1; " +
+                "echo __GM_DONE__ >> '" + termuxPath + "'";
 
             Intent intent = new Intent();
             intent.setClassName("com.termux", "com.termux.app.RunCommandService");
