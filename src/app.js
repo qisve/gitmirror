@@ -7,7 +7,6 @@ const S = {
   dl:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
   send:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
   git:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>`,
-  search:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
   folder:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
 }
 
@@ -149,49 +148,119 @@ function renderSettings() {
 }
 
 async function detectGh() {
-  const r1 = await exec('which gh && echo GH_OK', 'chk-gh')
-  if (r1.sent) { const o1 = await poll(r1.outputPath, 8000); ghOk = o1 && o1.includes('GH_OK') }
-  if (ghOk) {
-    const r2 = await exec('gh auth status 2>&1 && echo AUTH_OK', 'chk-auth')
-    if (r2.sent) { const o2 = await poll(r2.outputPath, 8000); authOk = o2 && o2.includes('AUTH_OK') }
+  // Use 'command -v gh' instead of 'which gh' — Termux doesn't have which
+  const r1 = await exec('command -v gh >/dev/null 2>&1 && echo GH_OK', 'chk-gh')
+  if (r1.sent) {
+    const o1 = await poll(r1.outputPath, 10000)
+    ghOk = o1 && o1.includes('GH_OK')
+    log('info', 'gh 检测: ' + (ghOk ? '✓' : '✗') + (o1 ? ' [' + o1.trim() + ']' : ''))
   }
-  log('info', 'gh: ' + (ghOk?'✓':'✗') + ' | 登录: ' + (authOk?'✓':'✗'))
+  if (ghOk) {
+    const r2 = await exec('gh auth status 2>&1; echo AUTH_RESULT_$?', 'chk-auth')
+    if (r2.sent) {
+      const o2 = await poll(r2.outputPath, 10000)
+      authOk = o2 && o2.includes('Logged in')
+      log('info', '登录检测: ' + (authOk ? '✓' : '✗') + (o2 ? ' [' + o2.trim().slice(0, 80) + '…]' : ''))
+    }
+  }
 }
 
 function renderEnv() {
   const el = document.getElementById('env-card')
   if (!el) return
-  const row = (ic,cls,tx,sub) => `<div class="env-row"><div class="env-icon ${cls}">${ic}</div><div><div class="env-text">${tx}</div><div class="env-sub">${sub}</div></div></div>`
+  const row = (ic, cls, tx, sub) => `<div class="env-row"><div class="env-icon ${cls}">${ic}</div><div><div class="env-text">${tx}</div><div class="env-sub">${sub}</div></div></div>`
   el.innerHTML =
-    row(txOk?'✓':'✗',txOk?'ok':'err','Termux',txOk?'已安装':'未安装')+
-    row(stOk?'✓':'✗',stOk?'ok':'err','存储权限',stOk?'已获取':'未获取')+
-    row(ghOk?'✓':'✗',ghOk?'ok':'err','GitHub CLI',ghOk?'已安装':'未安装')+
-    row(authOk?'✓':'✗',authOk?'ok':'err','GitHub 账户',authOk?'已登录':'未登录')
+    row(txOk ? '✓' : '✗', txOk ? 'ok' : 'err', 'Termux', txOk ? '已安装' : '未安装') +
+    row(stOk ? '✓' : '✗', stOk ? 'ok' : 'err', '存储权限', stOk ? '已获取' : '未获取') +
+    row(ghOk ? '✓' : '✗', ghOk ? 'ok' : 'err', 'GitHub CLI', ghOk ? '已安装' : '未安装') +
+    row(authOk ? '✓' : '✗', authOk ? 'ok' : 'err', 'GitHub 账户', authOk ? '已登录' : '未登录')
 }
 
 const MODALS = {
-  repo:{title:'新建仓库',btn:'创建仓库',fields:[{id:'name',label:'仓库名称 *',ph:'my-project',type:'input'},{id:'desc',label:'描述',ph:'项目描述…',type:'textarea'},{id:'vis',label:'可见性',type:'select',opts:[['public','公开'],['private','私有']]}],cmd:d=>`gh repo create ${d.name} --${d.vis}${d.desc?` --description "${d.desc}"`:''}`,wait:false},
-  issue:{title:'提交问题',btn:'提交',fields:[{id:'repo',label:'仓库（用户名/仓库名）*',ph:'user/repo',type:'input'},{id:'title',label:'标题 *',ph:'问题描述…',type:'input'},{id:'body',label:'详细描述',ph:'请详细描述…',type:'textarea'}],cmd:d=>`gh issue create --repo ${d.repo} --title "${d.title}"${d.body?` --body "${d.body}"`:''}`,wait:false},
-  gist:{title:'创建代码片段',btn:'创建',fields:[{id:'file',label:'文件名 *',ph:'example.js',type:'input'},{id:'code',label:'代码内容 *',ph:'console.log("hello")',type:'textarea'},{id:'vis',label:'可见性',type:'select',opts:[['public','公开'],['secret','私有']]}],cmd:d=>`echo '${d.code.replace(/'/g,"'\\''")}' > /tmp/g_${Date.now()}.txt && gh gist create /tmp/g_${Date.now()}.txt --${d.vis} --filename ${d.file} && rm /tmp/g_${Date.now()}.txt`,wait:false},
-  clone:{title:'克隆仓库',btn:'开始克隆',fields:[{id:'url',label:'仓库地址 *',ph:'https://github.com/user/repo',type:'input'},{id:'dir',label:'本地目录（可选）',ph:'留空则自动命名',type:'input'}],cmd:d=>`cd ~/projects 2>/dev/null||mkdir -p ~/projects && cd ~/projects && git clone ${d.url}${d.dir?' '+d.dir:''}`,wait:false},
-  pr:{title:'发起拉取请求',btn:'创建 PR',fields:[{id:'repo',label:'仓库 *',ph:'user/repo',type:'input'},{id:'title',label:'标题 *',ph:'PR 标题…',type:'input'},{id:'body',label:'描述',ph:'变更说明…',type:'textarea'},{id:'base',label:'目标分支',ph:'main',type:'input'}],cmd:d=>`gh pr create --repo ${d.repo} --title "${d.title}"${d.body?` --body "${d.body}"`:''}${d.base?` --base ${d.base}`:''}`,wait:false},
-  push:{title:'推送代码',btn:'提交并推送',fields:[{id:'dir',label:'本地仓库路径 *',ph:'~/projects/my-repo',type:'input'},{id:'msg',label:'提交信息 *',ph:'feat: 新功能…',type:'input'},{id:'branch',label:'分支（可选）',ph:'留空则当前分支',type:'input'}],cmd:d=>`cd ${d.dir} && git add -A && git commit -m "${d.msg}"${d.branch?` && git push origin ${d.branch}`:' && git push'}`,wait:false},
-  search:{title:'搜索仓库',btn:'搜索',fields:[{id:'q',label:'关键词 *',ph:'react, 前端框架…',type:'input'},{id:'lang',label:'语言',type:'select',opts:[['','全部'],['javascript','JavaScript'],['typescript','TypeScript'],['python','Python'],['rust','Rust'],['go','Go'],['java','Java']]}],cmd:d=>`gh search repos "${d.q}"${d.lang?` --language ${d.lang}`:''} --limit 10 --json name,description,stargazerCount`,wait:true},
+  repo: {
+    title: '新建仓库', btn: '创建仓库',
+    fields: [
+      { id: 'name', label: '仓库名称 *', ph: 'my-project', type: 'input' },
+      { id: 'desc', label: '描述', ph: '项目描述…', type: 'textarea' },
+      { id: 'vis', label: '可见性', type: 'select', opts: [['public', '公开'], ['private', '私有']] }
+    ],
+    cmd: d => `gh repo create ${d.name} --${d.vis}${d.desc ? ` --description "${d.desc}"` : ''}`,
+    wait: false
+  },
+  issue: {
+    title: '提交问题', btn: '提交',
+    fields: [
+      { id: 'repo', label: '仓库（用户名/仓库名）*', ph: 'user/repo', type: 'input' },
+      { id: 'title', label: '标题 *', ph: '问题描述…', type: 'input' },
+      { id: 'body', label: '详细描述', ph: '请详细描述…', type: 'textarea' }
+    ],
+    cmd: d => `gh issue create --repo ${d.repo} --title "${d.title}"${d.body ? ` --body "${d.body}"` : ''}`,
+    wait: false
+  },
+  gist: {
+    title: '创建代码片段', btn: '创建',
+    fields: [
+      { id: 'file', label: '文件名 *', ph: 'example.js', type: 'input' },
+      { id: 'code', label: '代码内容 *', ph: 'console.log("hello")', type: 'textarea' },
+      { id: 'vis', label: '可见性', type: 'select', opts: [['public', '公开'], ['secret', '私有']] }
+    ],
+    cmd: d => `gh gist create - --${d.vis} --filename ${d.file} << 'GISTEOF'\n${d.code}\nGISTEOF`,
+    wait: false
+  },
+  clone: {
+    title: '克隆仓库', btn: '开始克隆',
+    fields: [
+      { id: 'url', label: '仓库地址 *', ph: 'https://github.com/user/repo', type: 'input' },
+      { id: 'dir', label: '本地目录（可选）', ph: '留空则自动命名', type: 'input' }
+    ],
+    cmd: d => `mkdir -p ~/projects && cd ~/projects && git clone ${d.url}${d.dir ? ' ' + d.dir : ''}`,
+    wait: false
+  },
+  pr: {
+    title: '发起拉取请求', btn: '创建 PR',
+    fields: [
+      { id: 'repo', label: '仓库 *', ph: 'user/repo', type: 'input' },
+      { id: 'title', label: '标题 *', ph: 'PR 标题…', type: 'input' },
+      { id: 'body', label: '描述', ph: '变更说明…', type: 'textarea' },
+      { id: 'base', label: '目标分支', ph: 'main', type: 'input' }
+    ],
+    cmd: d => `gh pr create --repo ${d.repo} --title "${d.title}"${d.body ? ` --body "${d.body}"` : ''}${d.base ? ` --base ${d.base}` : ''}`,
+    wait: false
+  },
+  push: {
+    title: '推送代码', btn: '提交并推送',
+    fields: [
+      { id: 'dir', label: '本地仓库路径 *', ph: '~/projects/my-repo', type: 'input' },
+      { id: 'msg', label: '提交信息 *', ph: 'feat: 新功能…', type: 'input' },
+      { id: 'branch', label: '分支（可选）', ph: '留空则当前分支', type: 'input' }
+    ],
+    cmd: d => `cd ${d.dir} && git add -A && git commit -m "${d.msg}"${d.branch ? ` && git push origin ${d.branch}` : ' && git push'}`,
+    wait: false
+  },
+  search: {
+    title: '搜索仓库', btn: '搜索',
+    fields: [
+      { id: 'q', label: '关键词 *', ph: 'react, 前端框架…', type: 'input' },
+      { id: 'lang', label: '语言', type: 'select', opts: [['', '全部'], ['javascript', 'JavaScript'], ['typescript', 'TypeScript'], ['python', 'Python'], ['rust', 'Rust'], ['go', 'Go'], ['java', 'Java']] }
+    ],
+    cmd: d => `gh search repos "${d.q}"${d.lang ? ` --language ${d.lang}` : ''} --limit 10 --json name,description,stargazerCount`,
+    wait: true
+  }
 }
 
 function openModal(type) {
   const m = MODALS[type]
   if (!m) return
   const bd = document.getElementById('mbd')
-  bd.innerHTML = `<h2>${m.title}</h2><p>所有操作将通过终端命令执行</p>`+
-    m.fields.map(f=>{
-      if(f.type==='input') return `<div class="fd"><label>${f.label}</label><input id="mf-${f.id}" placeholder="${f.ph||''}"></div>`
-      if(f.type==='textarea') return `<div class="fd"><label>${f.label}</label><textarea id="mf-${f.id}" placeholder="${f.ph||''}"></textarea></div>`
-      if(f.type==='select') return `<div class="fd"><label>${f.label}</label><select id="mf-${f.id}">${f.opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join('')}</select></div>`
+  bd.innerHTML = `<h2>${m.title}</h2><p>所有操作将通过终端命令执行</p>` +
+    m.fields.map(f => {
+      if (f.type === 'input') return `<div class="fd"><label>${f.label}</label><input id="mf-${f.id}" placeholder="${f.ph || ''}"></div>`
+      if (f.type === 'textarea') return `<div class="fd"><label>${f.label}</label><textarea id="mf-${f.id}" placeholder="${f.ph || ''}"></textarea></div>`
+      if (f.type === 'select') return `<div class="fd"><label>${f.label}</label><select id="mf-${f.id}">${f.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></div>`
       return ''
-    }).join('')+
+    }).join('') +
     `<div class="cmd-preview" id="cmd-preview">填写表单后预览命令</div><div class="m-acts"><button class="btn btn-g" onclick="window._closeModal()">取消</button><button class="btn btn-s" onclick="window._doAction('${type}')">${m.btn}</button></div>`
-  m.fields.forEach(f=>{const inp=document.getElementById(`mf-${f.id}`);if(inp)inp.oninput=()=>updateCmdPreview(type)})
+  m.fields.forEach(f => { const inp = document.getElementById(`mf-${f.id}`); if (inp) inp.oninput = () => updateCmdPreview(type) })
   document.getElementById('mbg').classList.add('on')
   updateCmdPreview(type)
 }
@@ -209,49 +278,49 @@ async function doAction(type) {
   const m = MODALS[type]
   const data = {}
   m.fields.forEach(f => { const el = document.getElementById(`mf-${f.id}`); data[f.id] = el ? el.value.trim() : '' })
-  for (const f of m.fields) { if (f.label.includes('*') && !data[f.id]) { toast('请填写: ' + f.label.replace(' *',''), 'er'); return } }
+  for (const f of m.fields) { if (f.label.includes('*') && !data[f.id]) { toast('请填写: ' + f.label.replace(' *', ''), 'er'); return } }
   const cmd = m.cmd(data)
   closeModal()
   log('cmd', '$ ' + cmd)
   const id = type + '-' + Date.now()
   const r = await exec(cmd, id)
-  if (!r.sent) { log('err', '发送失败: ' + (r.error||'请检查 Termux')); toast('命令发送失败','er'); return }
+  if (!r.sent) { log('err', '发送失败: ' + (r.error || '请检查 Termux')); toast('命令发送失败', 'er'); return }
   log('ok', '✓ 已发送至 Termux')
-  toast('命令已发送','ok')
+  toast('命令已发送', 'ok')
   if (m.wait) {
     log('info', '等待执行结果…')
     const out = await poll(r.outputPath, 20000)
-    if (out) { log('out', out.trim()); if (type==='search'){try{const items=JSON.parse(out.trim());log('ok','找到 '+items.length+' 个结果')}catch{log('out',out.trim())}} }
-    else { log('err','等待超时') }
+    if (out) { log('out', out.trim()); if (type === 'search') { try { const items = JSON.parse(out.trim()); log('ok', '找到 ' + items.length + ' 个结果') } catch { log('out', out.trim()) } } }
+    else { log('err', '等待超时') }
   }
 }
 
 async function detectEnv() {
-  toast('正在检测…','ok')
+  toast('正在检测…', 'ok')
   txOk = isNative ? await checkTermux() : false
   if (txOk) { stOk = await requestStoragePermission(); await detectGh() }
   renderEnv()
-  toast('检测完成','ok')
+  toast('检测完成', 'ok')
 }
 
-function log(type, text) { T.push({type,text}); renderTerm() }
+function log(type, text) { T.push({ type, text }); renderTerm() }
 function renderTerm() {
   const el = document.getElementById('tb')
   if (!el) return
-  el.innerHTML = T.map(t=>{const c={cmd:'cm',ok:'ok',err:'er',info:'nf',out:'ot'}[t.type]||'ot';const pr=t.type==='cmd'?'<span class="pr">❯</span> ':'';return `<div class="tl">${pr}<span class="${c}">${esc(t.text)}</span></div>`}).join('')
+  el.innerHTML = T.map(t => { const c = { cmd: 'cm', ok: 'ok', err: 'er', info: 'nf', out: 'ot' }[t.type] || 'ot'; const pr = t.type === 'cmd' ? '<span class="pr">❯</span> ' : ''; return `<div class="tl">${pr}<span class="${c}">${esc(t.text)}</span></div>` }).join('')
   el.scrollTop = el.scrollHeight
 }
-function clearTerm() { T.length=0; renderTerm(); log('info','终端已清空') }
+function clearTerm() { T.length = 0; renderTerm(); log('info', '终端已清空') }
 
-function toast(msg,type='ok') {
-  const el=document.getElementById('toast')
-  el.className='toast '+type+' show'
-  el.innerHTML=`<span>${type==='ok'?'✓':'✗'}</span> ${esc(msg)}`
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast')
+  el.className = 'toast ' + type + ' show'
+  el.innerHTML = `<span>${type === 'ok' ? '✓' : '✗'}</span> ${esc(msg)}`
   clearTimeout(window._tt)
-  window._tt=setTimeout(()=>el.classList.remove('show'),2500)
+  window._tt = setTimeout(() => el.classList.remove('show'), 2500)
 }
 
-function esc(s) { const d=document.createElement('div');d.textContent=s;return d.innerHTML }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML }
 
 window._openModal = openModal
 window._closeModal = closeModal
