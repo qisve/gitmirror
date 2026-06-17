@@ -1,0 +1,6 @@
+{
+  "appId": "com.gitmirror.app",
+  "appName": "GitMirror",
+  "webDir": "dist",
+  "androidScheme": "https"
+}
