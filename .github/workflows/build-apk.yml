@@ -46,7 +46,8 @@ jobs:
           <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" \/>\n\
           <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>\n\
           <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" \/>\n\
-          <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" \/>' \
+          <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" \/>\n\
+          <uses-permission android:name="com.termux.permission.RUN_COMMAND" \/>' \
             "$MANIFEST"
           sed -i '/<application/a\    android:requestLegacyExternalStorage="true"' \
             "$MANIFEST"
