@@ -164,7 +164,7 @@ async function doSearch() {
   if (!q) { toast('请输入关键词', 'er'); return }
   const c = document.getElementById('search-res')
   c.innerHTML = '<div class="empty-hint">搜索中…</div>'
-  const cmd = 'gh search repos "' + q + '"' + (lang ? ' --language ' + lang : '') + ' --limit 20 --json name,fullName,description,url,stargazerCount,forkCount,owner,language'
+  const cmd = 'gh search repos "' + q + '"' + (lang ? ' --language ' + lang : '') + ' --limit 20 --json name,fullName,description,url,stargazersCount,forksCount,owner,language'
   const r = await exec(cmd, 'sr-' + Date.now())
   if (!r.sent) { c.innerHTML = '<div class="empty-hint">发送失败</div>'; return }
   const out = await poll(r.outputPath, 25000)
@@ -359,7 +359,7 @@ function renderRepoList(id, list) {
       '<div class="ri-info"><div class="ri-name">' + S.folder + ' ' + esc(owner) + '/' + esc(name) + '</div>' +
       '<div class="ri-desc">' + esc(r.description||'暂无描述') + '</div>' +
       '<div class="ri-meta">' + (lang ? '<span><span class="ld" style="background:' + lc + '"></span>' + esc(lang) + '</span>' : '') +
-      '<span>⭐ ' + ((r.stargazerCount||r.stargazersCount||0)) + '</span><span>🔀 ' + ((r.forkCount||r.forksCount||0)) + '</span>' +
+      '<span>⭐ ' + ((r.stargazersCount||r.stargazersCount||0)) + '</span><span>🔀 ' + ((r.forksCount||r.forksCount||0)) + '</span>' +
       (r.isPrivate ? '<span>🔒</span>' : '') + '</div></div><div class="ri-go">→</div></div>'
   }).join('')
 }
