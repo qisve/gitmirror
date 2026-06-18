@@ -347,10 +347,13 @@ function renderRepoList(id, list) {
   if (!el) return
   if (!list.length) { el.innerHTML = '<div class="empty-hint">暂无数据</div>'; return }
   el.innerHTML = list.map((r, i) => {
-    const lc = LANG_CLR[r.primaryLanguage?.name || ''] || '#6b7394'
-    const lang = r.primaryLanguage?.name || ''
-    const owner = r.owner?.login || r.name?.split('/')[0] || ''
-    const name = r.name?.includes('/') ? r.name.split('/').pop() : r.name
+    const langObj = r.primaryLanguage || (r.languages && r.languages[0]) || {}
+    const lang = typeof langObj === 'string' ? langObj : (langObj.name || '')
+    const lc = LANG_CLR[lang] || '#6b7394'
+    var owner = '', name = r.name || ''
+    if (r.owner) { owner = r.owner.login }
+    else if (r.url) { var m = r.url.match(/github\.com\/([^/]+)/); if (m) owner = m[1] }
+    else if (r.nameWithOwner) { var p = r.nameWithOwner.split('/'); owner = p[0]; name = p[1] }
     return '<div class="ri" style="animation-delay:' + i*0.04 + 's" onclick="window._showDetail(\'' + esc(owner) + '\',\'' + esc(name) + '\')">' +
       '<div class="ri-info"><div class="ri-name">' + S.folder + ' ' + esc(owner) + '/' + esc(name) + '</div>' +
       '<div class="ri-desc">' + esc(r.description||'暂无描述') + '</div>' +
