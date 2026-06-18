@@ -23,6 +23,21 @@ const S = {
 
 let pg='home', T=[], repos=[], notifications=[], notiCount=0
 let txOk=false, stOk=false, ghOk=false, authOk=false, notiTimer=null
+function cleanJson(t) {
+  var s = t.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").trim();
+  if (!s) return "[]";
+  var a = s.indexOf("["), o = s.indexOf("{");
+  var st = -1;
+  if (a >= 0 && o >= 0) st = Math.min(a, o);
+  else if (a >= 0) st = a;
+  else if (o >= 0) st = o;
+  if (st < 0) return "[]";
+  var e = -1;
+  for (var i = s.length - 1; i >= st; i--) {
+    if (s[i] === "]" || s[i] === "}") { e = i + 1; break; }
+  }
+  return e > st ? s.slice(st, e) : s.slice(st);
+}
 
 export async function init() {
   document.getElementById('app').innerHTML = shell()
@@ -110,7 +125,7 @@ async function loadHomeRepos() {
   const out = await poll(r.outputPath, 20000)
   if (!out) return
   try {
-    const list = JSON.parse(out.trim())
+    const list = JSON.parse(cleanJson(out))
     repos = list
     renderRepoList('hr', list)
     const el = id => document.getElementById(id)
@@ -129,7 +144,7 @@ async function doLoadRepos() {
   if (!r.sent) { renderRepoList('rl-full', []); return }
   const out = await poll(r.outputPath, 25000)
   if (!out) { renderRepoList('rl-full', []); return }
-  try { repos = JSON.parse(out.trim()); renderRepoList('rl-full', repos) } catch { renderRepoList('rl-full', []) }
+  try { repos = JSON.parse(cleanJson(out)); renderRepoList('rl-full', repos) } catch { renderRepoList('rl-full', []) }
 }
 
 function renderSearch() {
@@ -155,7 +170,7 @@ async function doSearch() {
   const out = await poll(r.outputPath, 25000)
   if (!out) { c.innerHTML = '<div class="empty-hint">超时</div>'; return }
   try {
-    const items = JSON.parse(out.trim())
+    const items = JSON.parse(cleanJson(out))
     if (!items.length) { c.innerHTML = '<div class="empty-hint">未找到</div>'; return }
     renderRepoList('search-res', items)
   } catch { c.innerHTML = '<div class="empty-hint">解析失败</div>' }
@@ -169,7 +184,7 @@ async function fetchNotifications() {
   if (!out) return
   try {
     const lines = out.trim().split('\n').filter(l => l.trim())
-    notifications = lines.map(l => JSON.parse(l)).slice(0, 30)
+    notifications = lines.map(l => JSON.parse(cleanJson(l))).slice(0, 30)
     notiCount = notifications.filter(n => n.unread).length
     const el = document.getElementById('sn')
     if (el) el.textContent = notiCount
@@ -263,7 +278,7 @@ async function showDetail(owner, name) {
   if (!r.sent) { document.getElementById('pg-detail').innerHTML = '<div class="detail-header"><button class="btn btn-g back-btn" onclick="window._goBack()">' + S.back + ' 返回</button></div><div class="empty-hint">发送失败</div>'; return }
   const out = await poll(r.outputPath, 20000)
   if (!out) { document.getElementById('pg-detail').innerHTML = '<div class="detail-header"><button class="btn btn-g back-btn" onclick="window._goBack()">' + S.back + ' 返回</button></div><div class="empty-hint">超时</div>'; return }
-  try { renderDetail(JSON.parse(out.trim()), fullName) } catch { document.getElementById('pg-detail').innerHTML = '<div class="detail-header"><button class="btn btn-g back-btn" onclick="window._goBack()">' + S.back + ' 返回</button></div><div class="empty-hint">解析失败</div>' }
+  try { renderDetail(JSON.parse(cleanJson(out)), fullName) } catch { document.getElementById('pg-detail').innerHTML = '<div class="detail-header"><button class="btn btn-g back-btn" onclick="window._goBack()">' + S.back + ' 返回</button></div><div class="empty-hint">解析失败</div>' }
 }
 
 function renderDetail(d, fullName) {
