@@ -39,47 +39,38 @@ jobs:
 
       - name: Patch AndroidManifest
         run: |
-          MANIFEST=android/app/src/main/AndroidManifest.xml
+          M=android/app/src/main/AndroidManifest.xml
           sed -i '/<uses-permission.*INTERNET/a\
-          <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" \/>\n\
-          <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>\n\
-          <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" \/>\n\
-          <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" \/>\n\
-          <uses-permission android:name="android.permission.POST_NOTIFICATIONS" \/>\n\
-          <uses-permission android:name="com.termux.permission.RUN_COMMAND" \/>' \
-            "$MANIFEST"
-          sed -i '/<application/a\    android:requestLegacyExternalStorage="true"' \
-            "$MANIFEST"
+          <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\
+          <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\
+          <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />\
+          <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\
+          <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\
+          <uses-permission android:name="com.termux.permission.RUN_COMMAND" />' "$M"
+          sed -i '/<application/a\    android:requestLegacyExternalStorage="true"' "$M"
 
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Generate keystore
+      - name: Generate keystore and patch signing
         run: |
           keytool -genkeypair -v \
             -keystore android/app/debug.keystore \
             -alias debug -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass android -keypass android \
             -dname "CN=GitMirror,OU=Dev,O=GitMirror,L=SH,ST=SH,C=CN"
-
-      - name: Patch signing config
-        run: |
-          FILE=android/app/build.gradle
-          if ! grep -q signingConfigs "$FILE"; then
-            sed -i '/defaultConfig {/i\
-            \    signingConfigs {\
-            \        debug {\
-            \            storeFile file("debug.keystore")\
-            \            storePassword "android"\
-            \            keyAlias "debug"\
-            \            keyPassword "android"\
-            \        }\
-            \    }' "$FILE"
-          fi
-          if ! grep -q signingConfig "$FILE"; then
-            sed -i '/debug {/a\
-            \                signingConfig signingConfigs.debug' "$FILE"
-          fi
+          node -e "
+            var fs=require('fs'),f='android/app/build.gradle',s=fs.readFileSync(f,'utf8');
+            if(s.indexOf('signingConfigs')===-1){
+              s=s.replace('    defaultConfig {','    signingConfigs {\n        debug {\n            storeFile file(\"debug.keystore\")\n            storePassword \"android\"\n            keyAlias \"debug\"\n            keyPassword \"android\"\n        }\n    }\n    defaultConfig {');
+            }
+            if(s.indexOf('signingConfig signingConfigs.debug')===-1){
+              var i=s.indexOf('debug {',s.indexOf('buildTypes'));
+              if(i>-1) s=s.slice(0,i+7)+'\n                signingConfig signingConfigs.debug'+s.slice(i+7);
+            }
+            fs.writeFileSync(f,s);
+            console.log('signing patched');
+          "
 
       - name: Build Debug APK
         run: |

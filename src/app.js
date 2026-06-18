@@ -164,7 +164,7 @@ async function doSearch() {
   if (!q) { toast('请输入关键词', 'er'); return }
   const c = document.getElementById('search-res')
   c.innerHTML = '<div class="empty-hint">搜索中…</div>'
-  const cmd = 'gh search repos "' + q + '"' + (lang ? ' --language ' + lang : '') + ' --limit 20 --json name,description,stargazerCount,forkCount,primaryLanguage,updatedAt,owner,url'
+  const cmd = 'gh search repos "' + q + '"' + (lang ? ' --language ' + lang : '') + ' --limit 20 --json name,fullName,description,url,stargazerCount,forkCount,owner,language'
   const r = await exec(cmd, 'sr-' + Date.now())
   if (!r.sent) { c.innerHTML = '<div class="empty-hint">发送失败</div>'; return }
   const out = await poll(r.outputPath, 25000)
@@ -347,10 +347,11 @@ function renderRepoList(id, list) {
   if (!el) return
   if (!list.length) { el.innerHTML = '<div class="empty-hint">暂无数据</div>'; return }
   el.innerHTML = list.map((r, i) => {
-    const langObj = r.primaryLanguage || (r.languages && r.languages[0]) || {}
+    const langObj = r.primaryLanguage || (typeof r.language === 'string' ? {name: r.language} : (r.languages && r.languages[0])) || {}
     const lang = typeof langObj === 'string' ? langObj : (langObj.name || '')
     const lc = LANG_CLR[lang] || '#6b7394'
     var owner = '', name = r.name || ''
+    if (r.fullName) { var fp = r.fullName.split('/'); owner = fp[0] || owner; name = fp[1] || name }
     if (r.owner) { owner = r.owner.login }
     else if (r.url) { var m = r.url.match(/github\.com\/([^/]+)/); if (m) owner = m[1] }
     else if (r.nameWithOwner) { var p = r.nameWithOwner.split('/'); owner = p[0]; name = p[1] }
@@ -358,7 +359,7 @@ function renderRepoList(id, list) {
       '<div class="ri-info"><div class="ri-name">' + S.folder + ' ' + esc(owner) + '/' + esc(name) + '</div>' +
       '<div class="ri-desc">' + esc(r.description||'暂无描述') + '</div>' +
       '<div class="ri-meta">' + (lang ? '<span><span class="ld" style="background:' + lc + '"></span>' + esc(lang) + '</span>' : '') +
-      '<span>⭐ ' + (r.stargazerCount||0) + '</span><span>🔀 ' + (r.forkCount||0) + '</span>' +
+      '<span>⭐ ' + ((r.stargazerCount||r.stargazersCount||0)) + '</span><span>🔀 ' + ((r.forkCount||r.forksCount||0)) + '</span>' +
       (r.isPrivate ? '<span>🔒</span>' : '') + '</div></div><div class="ri-go">→</div></div>'
   }).join('')
 }
