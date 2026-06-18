@@ -34,10 +34,8 @@ jobs:
 
       - name: Copy native plugin files
         run: |
-          cp -f android-src/TermuxBridge.java \
-            android/app/src/main/java/com/gitmirror/app/
-          cp -f android-src/MainActivity.java \
-            android/app/src/main/java/com/gitmirror/app/
+          cp -f android-src/TermuxBridge.java android/app/src/main/java/com/gitmirror/app/
+          cp -f android-src/MainActivity.java android/app/src/main/java/com/gitmirror/app/
 
       - name: Patch AndroidManifest
         run: |
@@ -56,34 +54,32 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Generate keystore and patch signing
+      - name: Generate keystore
         run: |
           keytool -genkeypair -v \
             -keystore android/app/debug.keystore \
             -alias debug -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass android -keypass android \
             -dname "CN=GitMirror,OU=Dev,O=GitMirror,L=SH,ST=SH,C=CN"
-          python3 - << 'PYEOF'
-          import re
-          f = "android/app/build.gradle"
-          s = open(f).read()
-          sig = '''
-    signingConfigs {
-        debug {
-            storeFile file("debug.keystore")
-            storePassword "android"
-            keyAlias "debug"
-            keyPassword "android"
-        }
-    }
-'''
-          if "signingConfigs" not in s:
-              s = s.replace("    defaultConfig {", sig + "    defaultConfig {")
-          if "signingConfig signingConfigs.debug" not in s:
-              s = re.sub(r'(debug\s*\{)', r'\1\n                signingConfig signingConfigs.debug', s, count=1)
-          open(f, "w").write(s)
-          print("signing patched")
-          PYEOF
+
+      - name: Patch signing config
+        run: |
+          FILE=android/app/build.gradle
+          if ! grep -q signingConfigs "$FILE"; then
+            sed -i '/defaultConfig {/i\
+            \    signingConfigs {\
+            \        debug {\
+            \            storeFile file("debug.keystore")\
+            \            storePassword "android"\
+            \            keyAlias "debug"\
+            \            keyPassword "android"\
+            \        }\
+            \    }' "$FILE"
+          fi
+          if ! grep -q signingConfig "$FILE"; then
+            sed -i '/debug {/a\
+            \                signingConfig signingConfigs.debug' "$FILE"
+          fi
 
       - name: Build Debug APK
         run: |
