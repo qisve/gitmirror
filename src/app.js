@@ -18,6 +18,7 @@ const S = {
   branch:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>`,
   bell:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`,
   pr:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>`,
+  release:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
   comment:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
 }
 
@@ -311,9 +312,12 @@ function renderDetail(d, fullName) {
       '<button class="btn btn-p" onclick="window.open(\'https://github.com/' + esc(fullName) + '\',\'_blank\')">' + S.ext + ' GitHub</button>' +
       (d.homepageUrl ? '<button class="btn btn-g" onclick="window.open(\'' + esc(d.homepageUrl) + '\',\'_blank\')">' + S.ext + ' 网站</button>' : '') +
     '</div>' +
+    '<div class="sect" style="margin-top:20px"><span class="dot"></span>版本发布</div>' +
+    '<div id="detail-releases" class="release-list"><div class="empty-hint">加载中…</div></div>' +
     '<div class="sect" style="margin-top:20px"><span class="dot"></span>终端</div>' +
     '<div class="term"><div class="term-bar"><div class="dots"><span></span><span></span><span></span></div><span class="term-t">Terminal</span></div><div class="term-body" id="tb2"></div></div>'
   renderTermDetail()
+  fetchReleases(fullName)
 }
 
 function renderTermDetail() {
@@ -335,6 +339,55 @@ async function doClone(fullName) {
   log('ok', '✓ 克隆已发送'); toast('克隆已开始', 'ok')
   const out = await poll(r.outputPath, 60000)
   if (out) { log(out.includes('fatal') ? 'err' : 'ok', out.trim()); renderTermDetail() }
+}
+
+
+async function fetchRepos(fullName) {
+  var cmd = 'gh release list --repo ' + fullName + ' --limit 5 --json tagName,name,publishedAt,isDraft,isPrerelease,assets'
+  log('cmd', cmd)
+  var r = await exec(cmd, 'rel-' + Date.now())
+  if (!r.sent) { document.getElementById('detail-releases').innerHTML = '<div class="empty-hint">获取失败</div>'; return }
+  var out = await poll(r.outputPath, 20000)
+  if (!out) { document.getElementById('detail-releases').innerHTML = '<div class="empty-hint">超时</div>'; return }
+  var el = document.getElementById('detail-releases')
+  if (!el) return
+  try {
+    var rels = JSON.parse(cleanJson(out))
+    if (!rels.length) { el.innerHTML = '<div class="empty-hint">暂无发布版本</div>'; return }
+    el.innerHTML = rels.map(function(r) {
+      var assets = r.assets || []
+      var badge = r.isDraft ? '<span class="badge private">草稿</span>' : r.isPrerelease ? '<span class="badge" style="background:rgba(251,146,60,.12);color:#fb923c">预发布</span>' : '<span class="badge public">正式版</span>'
+      var assetHtml = assets.length ?
+        '<div class="rel-assets">' + assets.map(function(a) {
+          var sz = a.size ? (a.size / 1048576).toFixed(1) + ' MB' : ''
+          return '<div class="rel-asset" onclick="window._dlAsset(\'' + esc(fullName) + '\',\'' + esc(r.tagName) + '\',\'' + esc(a.name) + '\')"><span class="rel-asset-name">' + esc(a.name) + '</span><span class="rel-asset-size">' + sz + '</span><span class="rel-asset-dl">' + S.dl + '</span></div>'
+        }).join('') + '</div>'
+        : ''
+      return '<div class="rel-item"><div class="rel-header"><span class="rel-tag">' + esc(r.tagName) + '</span>' + badge + '<span class="rel-time">' + timeAgo(r.publishedAt) + '</span></div>' + (r.name ? '<div class="rel-name">' + esc(r.name) + '</div>' : '') + assetHtml + '</div>'
+    }).join('')
+  } catch(e) {
+    el.innerHTML = '<div class="empty-hint">暂无发布版本</div>'
+  }
+}
+
+// Alias for global binding
+var fetchReleases = fetchRepos
+
+async function dlAsset(fullName, tag, filename) {
+  var cmd = 'mkdir -p ~/downloads && cd ~/downloads && gh release download ' + tag + ' --repo ' + fullName + ' --pattern "' + filename + '" --clobber'
+  log('cmd', '$ ' + cmd)
+  toast('开始下载 ' + filename, 'ok')
+  var r = await exec(cmd, 'dl-' + Date.now())
+  if (!r.sent) { log('err', '发送失败'); toast('下载失败', 'er'); return }
+  var out = await poll(r.outputPath, 60000)
+  if (out) {
+    if (out.includes('error') || out.includes('failed')) {
+      log('err', out.trim()); toast('下载失败', 'er')
+    } else {
+      log('ok', '✓ 已下载到 ~/downloads/' + filename); toast('下载完成', 'ok')
+    }
+    renderTermDetail()
+  }
 }
 
 function goHome() { nav('home') }
@@ -513,3 +566,4 @@ window._goBack = goBack
 window._markAllRead = markAllRead
 window._refreshNoti = refreshNoti
 window._openNoti = openNoti
+window._dlAsset = dlAsset
